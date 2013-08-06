@@ -207,7 +207,7 @@ static void msm_fb_set_bl_brightness(struct led_classdev *led_cdev,
 
 static struct led_classdev backlight_led = {
 	.name		= "lcd-backlight",
-	.brightness	= MAX_BACKLIGHT_BRIGHTNESS,
+	.brightness	= (MAX_BACKLIGHT_BRIGHTNESS * .75),
 	.brightness_set	= msm_fb_set_bl_brightness,
 };
 #endif
@@ -462,8 +462,10 @@ static int msm_fb_probe(struct platform_device *pdev)
 	if (!lcd_backlight_registered) {
 		if (led_classdev_register(&pdev->dev, &backlight_led))
 			printk(KERN_ERR "led_classdev_register failed\n");
-		else
+		else {
+			msm_fb_set_bl_brightness(&backlight_led, backlight_led.brightness);
 			lcd_backlight_registered = 1;
+		}
 	}
 #endif
 
@@ -958,18 +960,6 @@ void msm_fb_set_backlight(struct msm_fb_data_type *mfd, __u32 bkl_lvl)
 	}
 }
 
-void msm_fb_display_on(struct msm_fb_data_type *mfd)
-{
-        struct msm_fb_panel_data *pdata;
-        pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
-
-        if ((pdata) && (pdata->display_on)) {
-                down(&mfd->sem);
-                pdata->display_on(mfd);
-                up(&mfd->sem);
-        }
-}
-
 static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			    boolean op_enable)
 {
@@ -990,7 +980,6 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			if (ret == 0) {
 				down(&mfd->sem);
 				mfd->panel_power_on = TRUE;
-				mfd->request_display_on = TRUE;
 				up(&mfd->sem);
 				mfd->panel_driver_on = mfd->op_enable;
 			}
@@ -1790,7 +1779,7 @@ static int msm_fb_open(struct fb_info *info, int user)
 	}
 
 	if (mfd->op_enable == 0) {
-		if (info->node == 2)
+		if (!mfd->ref_cnt && info->node == 2)
 			return -EPERM;
 		/* if system is in suspend mode, do not unblank */
 		mfd->ref_cnt++;
@@ -2043,20 +2032,6 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 	return msm_fb_pan_display_ex(info, &disp_commit);
 }
 
-
-static int handle_deferred_display_on(struct msm_fb_data_type *mfd)
-{
-	if (mfd->request_display_on) {
-		msm_fb_display_on(mfd);
-		down(&mfd->sem);
-		mfd->request_display_on = 0;
-		up(&mfd->sem);
-		return 1;
-	} else {
-		return 0;
-	}
-}
-
 static int msm_fb_pan_display_sub(struct fb_var_screeninfo *var,
 			      struct fb_info *info)
 {
@@ -2156,11 +2131,7 @@ static int msm_fb_pan_display_sub(struct fb_var_screeninfo *var,
 
 	up(&msm_fb_pan_sem);
 
-	if (handle_deferred_display_on(mfd)) {
-                bl_updated = 0;
-        }
-
-	if (unset_bl_level && !bl_updated)
+	if (!bl_updated)
 		schedule_delayed_work(&mfd->backlight_worker,
 					backlight_duration);
 
@@ -2184,7 +2155,6 @@ static void msm_fb_commit_wq_handler(struct work_struct *work)
 	if (fb_backup->disp_commit.flags &
 		MDP_DISPLAY_COMMIT_OVERLAY) {
 			mdp4_overlay_commit(info);
-			handle_deferred_display_on(mfd);
 	} else {
 		var = &fb_backup->disp_commit.var;
 		msm_fb_pan_display_sub(var, info);
@@ -2196,7 +2166,7 @@ static void msm_fb_commit_wq_handler(struct work_struct *work)
 
 	if (!bl_updated)
 		schedule_delayed_work(&mfd->backlight_worker,
-				backlight_duration);
+					backlight_duration);
 }
 
 static int msm_fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
@@ -3372,10 +3342,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	mutex_unlock(&msm_fb_notify_update_sem);
 
 	ret = mdp4_overlay_play(info, &req);
-
-	if (unset_bl_level && !bl_updated)
-		schedule_delayed_work(&mfd->backlight_worker,
-					backlight_duration);
 
 	if (info->node == 0 && (mfd->cont_splash_done)) /* primary */
 		mdp_free_splash_buffer(mfd);

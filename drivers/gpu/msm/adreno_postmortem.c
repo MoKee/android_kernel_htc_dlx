@@ -50,6 +50,7 @@ static const struct pm_id_name pm3_types[] = {
 	{CP_DRAW_INDX,			"DRW_NDX_"},
 	{CP_DRAW_INDX_BIN,		"DRW_NDXB"},
 	{CP_EVENT_WRITE,		"EVENT_WT"},
+	{CP_MEM_WRITE,			"MEM_WRIT"},
 	{CP_IM_LOAD,			"IN__LOAD"},
 	{CP_IM_LOAD_IMMEDIATE,		"IM_LOADI"},
 	{CP_IM_STORE,			"IM_STORE"},
@@ -740,7 +741,9 @@ int adreno_dump(struct kgsl_device *device, int manual)
 			(unsigned int *) &context_id,
 			KGSL_MEMSTORE_OFFSET(KGSL_MEMSTORE_GLOBAL,
 				current_context));
-	context = idr_find(&device->context_idr, context_id);
+
+	context = kgsl_context_get(device, context_id);
+
 	if (context) {
 		ts_processed = kgsl_readtimestamp(device, context,
 						  KGSL_TIMESTAMP_RETIRED);
@@ -748,6 +751,8 @@ int adreno_dump(struct kgsl_device *device, int manual)
 				context->id, ts_processed);
 	} else
 		KGSL_LOG_DUMP(device, "BAD CTXT: %d\n", context_id);
+
+	kgsl_context_put(context);
 
 	num_item = adreno_ringbuffer_count(&adreno_dev->ringbuffer,
 						cp_rb_rptr);
