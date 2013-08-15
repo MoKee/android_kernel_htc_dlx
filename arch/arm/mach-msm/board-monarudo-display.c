@@ -254,9 +254,9 @@ static struct lcdc_platform_data dtv_pdata = {
 static struct msm_panel_common_pdata mdp_pdata = {
 	.gpio = MDP_VSYNC_GPIO,
 	.mdp_max_clk = 266667000,
-	.mdp_max_bw = 4098424832UL,
-	.mdp_bw_ab_factor = 200,
-	.mdp_bw_ib_factor = 210,
+	.mdp_max_bw = 4290000000u,
+	.mdp_bw_ab_factor = 115,
+	.mdp_bw_ib_factor = 200,
 #ifdef CONFIG_MSM_BUS_SCALING
 	.mdp_bus_scale_table = &mdp_bus_scale_pdata,
 #endif
@@ -271,6 +271,11 @@ static struct msm_panel_common_pdata mdp_pdata = {
 	.splash_screen_size = 0x00,
 	.mdp_iommu_split_domain = 1,
 };
+
+static char mipi_dsi_splash_is_enabled(void)
+{
+	return mdp_pdata.cont_splash_enabled;
+}
 
 static char wfd_check_mdp_iommu_split_domain(void)
 {
@@ -497,6 +502,7 @@ static int mipi_dsi_panel_power(int on)
 
 static struct mipi_dsi_platform_data mipi_dsi_pdata = {
 	.dsi_power_save = mipi_dsi_panel_power,
+	.splash_is_enabled = mipi_dsi_splash_is_enabled,
 };
 
 static struct mipi_dsi_panel_platform_data *mipi_monarudo_pdata;
